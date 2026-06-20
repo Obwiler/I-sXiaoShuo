@@ -1,88 +1,96 @@
-﻿# I'sXiaoShuo · 我的小说
+﻿# I'sXiaoShuo · 爱小说
 
-> 工程化网文写作工具箱 —— 给 AI agent 用的全流程写作 skill
+> 一个给 AI agent 用的网文写作工程工具箱。
+> 名字梗：I'sXiaoShuo = 爱小说（love novels），不是什么高大上的品牌名，就是字面意思——爱写小说的人给自己搓的工具箱。
 > 适配番茄 / 起点 / 晋江 / 知乎盐选 / UC / Webnovel
 
 ---
 
-## 它能做什么
+## 它能干嘛
 
-- 用一条命令初始化完整的小说项目骨架
-- 提供审计脚本：P0 格式检查、逻辑链校验、角色声音一致性检查
-- 模式自动路由（纯设定讨论 / 正文写作 / 全量工程审计）
-- 项目状态缓存 + 章节关键词索引，降低百万字长篇小说上下文恢复成本
-- 自进化机制：扫描历史教训，自动生成规范更新提案
+- 一条命令初始化完整的小说项目骨架（目录 / 规则 / 交接文档 / 审计配置）
+- 审计脚本跑一遍：P0 格式检查 + 逻辑链 + 角色声音一致性
+- 自动识别你在干嘛：讨论设定就只读参考库，写正文就加载规范，跑审计就全量开火
+- 百万字长篇的上下文救星：状态缓存 + 章节关键词索引，30 秒恢复"写到哪了"
+- 自进化：扫吸取教训，自动提规范修改提案——你批了就改
 
 ## 快速开始
 
 ```bash
-# 1. 初始化一个新项目
+# 搓一个新项目
 python scripts/init/init_project.py --name "我的小说" --path /path/to/project
 
-# 2. 设置环境变量
+# 告诉脚本你的项目在哪
 $env:WEBNOVEL_PROJECT = "/path/to/project"
 
-# 3. 写正文 → 审计 → 归档
-#    读 其他/记忆锚点.md（30秒恢复状态）
-#    写正文
-#    python scripts/audit/audit_run.py --quick
-#    更新 其他/记忆锚点.md
+# 然后就是：写 → 审 → 归档
+#   读 其他/记忆锚点.md（30 秒）
+#   写正文
+#   python scripts/audit/audit_run.py --quick
+#   更新 其他/记忆锚点.md
 ```
 
-## 技能结构
+## 结构一览
 
 ```
 webnovel-studio/
-├── SKILL.md              ← 主入口，触发模式路由
-├── scripts/              ← 脚本工具链（审计 / 清理 / DOCX 编译 / 自进化 / 初始化）
-│   ├── audit/            ← 审计全家桶（P0/P1/P2 分层检查）
-│   ├── clean/            ← 格式清理（破折号 / 不是而是 / 重复字）
-│   ├── docx/             ← MD → DOCX 编译
-│   ├── evolve/           ← 自进化（扫吸取教训 → 提修改提案）
-│   └── init/             ← 新项目脚手架
-├── templates/            ← 项目初始化模板
-│   └── project-init/
-│       ├── template_rules/   ← 规则模板（5 文件）
-│       └── template_docs/    ← 文档模板
-├── references/           ← 写作参考库（10 个 craft 模块 + 平台 / 质量 / 工程文档）
-│   ├── craft/modules/    ← 10 个专项模块（开篇 / 对话 / 情节逻辑 / 反 AI 腔等）
-│   ├── novel-writing/    ← 叙事规则引擎
-│   ├── platform/         ← 各平台投稿指南
-│   ├── quality/          ← AI 检测 / 连贯性 / 节奏检查
+├── SKILL.md              ← 主入口，模式路由（agent 读这个就知道该干嘛）
+├── scripts/              ← 工具链
+│   ├── audit/            ← 审计（P0/P1/P2 分层，单文件或全量）
+│   ├── clean/            ← 格式清理（破折号 / 不是而是 / 重复字 / 字体修正）
+│   ├── docx/             ← MD → DOCX 编译（唯一真相源是 MD）
+│   ├── evolve/           ← 自进化（吸取教训 → 修改提案）
+│   └── init/             ← 脚手架（--name --path --genre）
+├── templates/            ← 初始化模板
+│   └── project-init/     ← 规则模板 5 件套 + 文档模板
+├── references/           ← 写作参考库（核心资产，10 个 craft 模块）
+│   ├── craft/modules/    ← 10 个模块，每个 5 件套（README / bad&good / runtime / tutorial）
+│   ├── novel-writing/    ← 叙事规则（6 方向）
+│   ├── platform/         ← 各平台投稿（7 平台横向对比）
+│   ├── quality/          ← AI 检测 / 连贯性 / 节奏（12 项量化指标）
 │   └── special/          ← 工程工作流 / 会话承接 / 记忆锚点
-├── corpus/               ← 网文语料库（166 篇已爬取文章 + 打标签摘录）
-└── demos/                ← 25 个不同主题的短篇 demo
+├── corpus/               ← 166 篇网文 + 打标签摘录（当写作参考用，别拿去训练模型）
+└── demos/                ← 25 个短篇 demo（证明这个库真的能写出东西）
 ```
 
 ## 三种模式
 
-| 模式 | 触发场景 | 加载内容 |
-|------|---------|---------|
-| **A**（世界观） | 设定讨论 / 世界观构建 | 只读 `references/` |
-| **B**（叙事） | 写正文 / 续写 / 对白 | `references/novel-writing/` + `AI注意事项及规则/` |
+| 模式 | 什么时候触发 | 加载什么 |
+|------|-------------|---------|
+| **A**（世界观） | 聊设定 / 构建世界观 | 只读 references/ |
+| **B**（叙事） | 写正文 / 续写 / 对白 | references/novel-writing/ + AI注意事项及规则/ |
 | **C**（工程） | 审计 / 检查 / 全量 | 模式 B + 项目级脚本 |
 
-检测到项目目录下有 `其他/PROJECT.yaml` 或 `AI注意事项及规则/` 时，自动进入工程模式。
+项目目录下有 其他/PROJECT.yaml 或 AI注意事项及规则/ 的时候自动进入工程模式，不用手动切。
 
-## 审计分层
+## 审计怎么用
 
-| 层级 | 检查项 |
+```bash
+# 快速检查（P0）：30 秒出报告
+python scripts/audit/audit_run.py --quick
+
+# 全量审计（P0+P1+P2+逻辑链+角色声音）
+python scripts/audit/audit_run.py --full
+
+# 单文件审计
+python scripts/audit/audit_run.py --target=文件路径
+```
+
+| 层级 | 查什么 |
 |------|--------|
-| **P0**（致命） | 破折号 / 不是而是 / 中二体 / AI 衔接词 |
-| **P1**（严重） | 引号规范 / 逗句比 1:0.5~0.8 |
-| **P2**（建议） | 角色声音 / 生活细节 / 五要素完整性 |
-
-单文件审计：`python scripts/audit/audit_run.py --target=文件路径`
+| **P0**（抓出来骂） | 破折号 / 不是而是 / 中二体 / AI 衔接词 |
+| **P1**（要认真改） | 引号规范 / 逗句比 1:0.5~0.8 |
+| **P2**（建议修） | 角色声音 / 生活细节 / 五要素完整性 |
 
 ## 环境变量
 
 ```bash
-# 所有脚本统一使用
+# 所有脚本统一认这个
 $env:WEBNOVEL_PROJECT = "/path/to/your/project"
 ```
 
-未设置时 fallback 到当前目录。
+没设就 fallback 到当前目录。懒得设也行，就是别抱怨审计扫错了地方。
 
 ## License
 
-MIT
+MIT —— 随便用，写出来了记得请我喝奶茶。
