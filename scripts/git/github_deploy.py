@@ -348,6 +348,10 @@ def dual_deploy(author_id, private_eng=False):
     print(f"\n--- 完成 ---")
     print(f"reader:     {_repo_url(user, names['reader'])}")
     print(f"engineer:   {_repo_url(user, names['engineer'])}")
+    # 添加 reader 作为独立 remote
+    run_git(["remote", "add", "reader", _repo_url(user, names['reader'])])
+    print(f"reader remote: {_repo_url(user, names['reader'])}")
+
 
 
 # ── CLI ──────────────────────────────────────────────────────
