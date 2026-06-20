@@ -35,25 +35,6 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 READER_BRANCH = "reader-output"
 
 
-def _gh_api(method, path, data=None):
-    """调用 GitHub REST API。"""
-    if not GITHUB_TOKEN:
-        return None
-    url = f"https://api.github.com{path}"
-    headers = {
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "webnovel-studio/0.5.0"
-    }
-    body = json.dumps(data).encode() if data else None
-    req = urllib.request.Request(url, data=body, headers=headers, method=method)
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return json.loads(resp.read().decode())
-    except (urllib.error.HTTPError, urllib.error.URLError, json.JSONDecodeError):
-        return None
-
-
 def get_repo_info():
     """从 git remote 解析 owner/repo。"""
     rc, out, _ = run_git(["remote", "get-url", "origin"])
@@ -68,18 +49,104 @@ def get_repo_info():
 
 
 def create_github_repo(repo_name, private=False):
-    """在 GitHub 上创建仓库，返回 clone URL。"""
-    if not GITHUB_TOKEN:
-        print("没有 GITHUB_TOKEN，跳过 GitHub API 操作。请手动创建仓库。")
-        return None
-    data = {"name": repo_name, "private": private, "auto_init": False}
-    result = _gh_api("POST", "/user/repos", data)
-    if result and "clone_url" in result:
-        print(f"GitHub 仓库已创建: {result['clone_url']}")
-        return result["clone_url"]
-    if result and "errors" in result:
-        print(f"创建失败: {result['errors']}")
+    """在 GitHub 上创建仓库，返回 clone URL。
+    尝试顺序：gh CLI -> GITHUB_TOKEN/GH_TOKEN API -> 打印手动指引
+    """
+    # 方法1: 用 gh CLI
+    rc, out, _ = run_git_bare(['gh', 'repo', 'create', repo_name,
+        '--private' if private else '--public',
+        '--source=.', '--remote=origin', '--push'])
+    if rc == 0:
+        user = _get_github_user()
+        clone_url = f'https://github.com/{user}/{repo_name}.git'
+        print(f'GitHub 仓库已通过 gh CLI 创建: {clone_url}')
+        return clone_url
+
+    # 方法2: 用 GitHub API
+    token = os.environ.get('GITHUB_TOKEN', '') or os.environ.get('GH_TOKEN', '')
+    if token:
+        import urllib.request, urllib.error, json
+        url = 'https://api.github.com/user/repos'
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'webnovel-studio/0.5.0'
+        }
+        data = json.dumps({'name': repo_name, 'private': private, 'auto_init': False}).encode()
+        req = urllib.request.Request(url, data=data, headers=headers, method='POST')
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                result = json.loads(resp.read().decode())
+            if 'clone_url' in result:
+                print(f'GitHub 仓库已通过 API 创建: {result["clone_url"]}')
+                return result['clone_url']
+        except urllib.error.HTTPError as e:
+            print(f'API 创建失败 (HTTP {e.code}): {e.read().decode()[:200]}')
+
+    # 方法3: 都不行，打印手动指引
+    _print_manual_guide(repo_name)
     return None
+
+
+def _get_github_user():
+    """获取当前 GitHub 用户名。"""
+    rc, out, _ = run_git_bare(['gh', 'api', 'user', '--jq', '.login'])
+    if rc == 0 and out.strip():
+        return out.strip()
+    token = os.environ.get('GITHUB_TOKEN', '') or os.environ.get('GH_TOKEN', '')
+    if token:
+        import urllib.request, json
+        try:
+            req = urllib.request.Request('https://api.github.com/user',
+                headers={'Authorization': f'Bearer {token}', 'User-Agent': 'webnovel-studio/0.5.0'})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read().decode()).get('login', 'YOUR_USER')
+        except:
+            pass
+    return 'YOUR_USER'
+
+
+def _print_manual_guide(repo_name):
+    """打印手动创建指引。"""
+    gh_token = os.environ.get('GITHUB_TOKEN', '') or os.environ.get('GH_TOKEN', '')
+    gh_rc, _, _ = run_git_bare(['gh', '--version'])
+    print()
+    print('=' * 55)
+    print('  无法自动创建 GitHub 仓库，请手动执行：')
+    print()
+    print(f'  环境检测:')
+    print(f'    GITHUB_TOKEN: {"已设置" if gh_token else "未设置"}')
+    print(f'    gh CLI:      {"已安装" if gh_rc == 0 else "未安装"}')
+    print()
+    print('  方案A（推荐）：安装 GitHub CLI')
+    print('    winget install GitHub.cli')
+    print('    gh auth login')
+    print(f'    gh repo create {repo_name} --source=. --remote=origin --push')
+    print()
+    print('  方案B：用 GITHUB_TOKEN')
+    print('    到 https://github.com/settings/tokens 创建 token')
+    print('    $env:GITHUB_TOKEN = "ghp_xxxx"')
+    print(f'    然后重新运行 --init')
+    print()
+    print('  方案C：手动创建')
+    print(f'    1. 打开 https://github.com/new')
+    print(f'    2. 仓库名：{repo_name}')
+    print(f'    3. git remote add origin https://github.com/YOUR_USER/{repo_name}.git')
+    print(f'    4. git push -u origin main')
+    print('=' * 55)
+
+
+def run_git_bare(args):
+    """执行任意命令，返回 (returncode, stdout, stderr)"""
+    import subprocess
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=30)
+        return r.returncode, r.stdout.strip(), r.stderr.strip()
+    except FileNotFoundError:
+        return -1, '', 'command not found'
+    except subprocess.TimeoutExpired:
+        return -1, '', 'timeout'
+
 
 
 def generate_reader_readme():
