@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.DS_Store
+node_modules/
+temp_*
+test_*
+
+# Generated artifacts
+*.docx
+!templates/**/*.docx
+*.pdf
+*.json
+!corpus/data/*.json
+!corpus/analysis/*.json

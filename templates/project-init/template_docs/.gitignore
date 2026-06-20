@@ -1,0 +1,11 @@
+﻿# Project-specific
+__pycache__/
+*.pyc
+.DS_Store
+node_modules/
+temp_*
+test_*
+
+# Generated artifacts
+*.docx
+!设定/template.docx
