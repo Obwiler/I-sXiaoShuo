@@ -259,7 +259,12 @@ def push_full():
 
 
 def push_reader():
-    """只推正文到 reader 分支。"""
+    """只推正文到 reader 分支。
+    原理：临时目录初始化干净 git repo
+    -> 复制正文/ + README
+    -> push 到 origin/reader-output
+    不会修改当前工作区。
+    """
     content_dir = os.path.join(PROJECT, "正文")
     if not os.path.isdir(content_dir):
         print("没有找到 正文/ 目录，无法以 reader 模式发布。")
@@ -270,49 +275,77 @@ def push_reader():
         return False
 
     reader_branch = READER_BRANCH
-
-    # 1. 确保 reader 分支存在（用 orphan 方式创建）
     print(f"准备 reader 分支 ({reader_branch})...")
-    run_git(["branch", "-D", reader_branch])  # 删除旧分支，忽略错误
-    run_git(["checkout", "--orphan", reader_branch])
-    run_git(["rm", "-rf", "."])  # 清空工作区
 
-    # 2. 复制 正文/ 内容到根目录
-    for item in os.listdir(content_dir):
-        src = os.path.join(content_dir, item)
-        dst = os.path.join(PROJECT, item)
-        if os.path.isdir(src):
-            shutil.copytree(src, dst, symlinks=False, dirs_exist_ok=True)
+    # 创建临时目录
+    tmp_dir = tempfile.mkdtemp(prefix="webnovel-reader-")
+    try:
+        # 复制正文内容到临时目录
+        for item in os.listdir(content_dir):
+            src = os.path.join(content_dir, item)
+            dst = os.path.join(tmp_dir, item)
+            if os.path.isdir(src):
+                shutil.copytree(src, dst, symlinks=False, dirs_exist_ok=True)
+            else:
+                shutil.copy2(src, dst)
+
+        # 生成 README 到临时目录
+        readme_content = generate_reader_readme()
+        with open(os.path.join(tmp_dir, "README.md"), "w", encoding="utf-8") as f:
+            f.write(readme_content)
+
+        # 在临时目录初始化 git repo
+        _run_cmd(["git", "init"], cwd=tmp_dir)
+        _run_cmd(["git", "config", "user.email", "2642477735@qq.com"], cwd=tmp_dir)
+        _run_cmd(["git", "config", "user.name", "Obwiler"], cwd=tmp_dir)
+        _run_cmd(["git", "add", "-A"], cwd=tmp_dir)
+        rc, out, err = _run_cmd(["git", "commit", "-m",
+            "reader: {} 更新".format(datetime.date.today().isoformat())], cwd=tmp_dir)
+        if rc != 0:
+            print(f"临时 repo 提交失败: {err}")
+            return False
+
+        # 获取 remote url
+        rc, remote_url, _ = run_git(["remote", "get-url", "origin"])
+        if rc != 0:
+            print("无法获取 remote URL")
+            return False
+
+        # push 到 remote reader branch
+        token = os.environ.get('GH_TOKEN', '') or os.environ.get('GITHUB_TOKEN', '')
+        auth_url = remote_url
+        if token and remote_url.startswith("https://"):
+            auth_url = remote_url.replace("https://", "https://Obwiler:" + token + "@")
+
+        _run_cmd(["git", "remote", "add", "origin", auth_url], cwd=tmp_dir)
+        rc, out, err = _run_cmd(["git", "push", "-f", "origin",
+            "main:" + reader_branch], cwd=tmp_dir)
+        if rc == 0:
+            print("正文已推送到 origin/" + reader_branch)
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            clean_url = remote_url.replace('.git', '')
+            print("阅读链接: " + clean_url + "/tree/" + reader_branch)
+            return True
         else:
-            shutil.copy2(src, dst)
-
-    # 3. 生成 README
-    readme_content = generate_reader_readme()
-    with open(os.path.join(PROJECT, "README.md"), "w", encoding="utf-8") as f:
-        f.write(readme_content)
-
-    # 4. 提交
-    run_git(["add", "-A"])
-    rc, out, err = run_git(["commit", "-m", f"reader: {datetime.date.today().isoformat()} 更新"])
-    if rc != 0:
-        print(f"reader 分支提交失败: {err}")
-        # 切回原分支
-        run_git(["checkout", "-f", get_current_branch()])
+            print("reader 推送失败: " + err)
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            return False
+    except Exception as e:
+        print("reader 发布异常: " + str(e))
+        shutil.rmtree(tmp_dir, ignore_errors=True)
         return False
 
-    # 5. 推送到 reader 分支
-    rc, out, err = run_git(["push", "-f", "origin", f"{reader_branch}:{reader_branch}"])
-    if rc == 0:
-        print(f"正文已推送到 origin/{reader_branch}")
-        url = run_git(["remote", "get-url", "origin"])[1]
-        print(f"阅读链接: {url.replace('.git', '')}/tree/{reader_branch}")
-        # 切回原分支
-        run_git(["checkout", "-f", get_current_branch()])
-        return True
-    else:
-        print(f"reader 推送失败: {err}")
-        run_git(["checkout", "-f", get_current_branch()])
-        return False
+
+def _run_cmd(args, cwd=None):
+    """执行外部命令，返回 (returncode, stdout, stderr)"""
+    import subprocess
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=30, cwd=cwd)
+        return r.returncode, r.stdout.strip(), r.stderr.strip()
+    except FileNotFoundError:
+        return -1, '', 'command not found'
+    except subprocess.TimeoutExpired:
+        return -1, '', 'timeout'
 
 
 def main():
